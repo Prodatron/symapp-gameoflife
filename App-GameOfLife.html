@@ -1,0 +1,112 @@
+<title>Conway's Game Of Life help</title>
+
+<h1>1000-Introduction</h1>
+<br>
+<b>INTRODUCTION TO CONWAY'S GAME OF LIFE</b><br>
+<br>
+The Game of Life, also known simply as Life, is a <i>cellular automaton</i> devised by the British mathematician <b>John Horton Conway</b> in 1970. It is a zero-player game, meaning that its evolution is determined by its initial state, requiring no further input. One interacts with the Game of Life by creating an initial configuration and observing how it evolves.<br>
+<br>
+Beside the basic rules and the cell field editor this implementation for SymbOS provides several additional features. A large pattern library is available for the editor as well as a set of complete predefined worlds.<br>
+<br>
+Unlike most other Game of Life implementations it is possible to define different rules for the death and the birth of cells depending on the amount of neighbour cells.<br>
+<br>
+
+<h2>1100-Feature overview</h2>
+<br>
+<b>FEATURES</b><br>
+<br>
+- full Game Of Life implementation<br>
+- cell growth statistics<br>
+- library with 218 predefined patterns<br>
+- predefined worlds<br>
+- torus mode<br>
+- free definable alternative birth/alive rules<br>
+- load/save cell fields<br>
+<br>
+
+<h2>1200-What's new?</h2>
+<br>
+<b>WHAT'S NEW?</b><br>
+<br>
+<b>V1.1 (2014-06-02)</b><br>
+<br>
+- MSX/VDP colour encoding added<br>
+<br>
+<b>V1.0 (2012-09-01)</b><br>
+<br>
+- first version<br>
+<br>
+
+<h1>2000-Using Conway's Game Of Life</h2>
+
+<h2>2100-Screen Layout</h2>
+<br>
+<b>SCREEN LAYOUT</b><br>
+<br>
+<b>Cell field</b><br>
+<br>
+The cell field is the large area at the upper left side of the window. It shows the current cell population, black dots are living cells. If Game Of Life is in pause mode you can edit the cell field by clicking into it. Depending on the edit mode, you will either add or remove a single cell or place a predefined pattern at the mouse position.<br>
+<br>
+<b>Controls and statistics</b><br>
+<br>
+The controls and statistic displays are placed at the right side of the window.<br>
+<br>
+Generations<br>
+            <t5>number of cell generations since<br>
+            <t5>the last "clear" event<br>
+Alive       <t5>number of current cells<br>
+Dead        <t5>number of empty fields<br>
+<br>
+Torus       <t5>if torus is activated, cells and rules<br>
+            <t5>will pass the borders of the cell field<br>
+            <t5>and continue at the opposite side;<br>
+            <t5>if it is deactivated, the border<br>
+            <t5>behaves like empty fields<br>
+<br>
+Edit mode   <t5>you can choose between single cell<br>
+            <t5>set/reset and placement of<br>
+            <t5>predefined pattern; please select a<br>
+            <t5>pattern in the dropdown menu<br>
+<br>
+Random      <t5>fills the field with random cells; set<br>
+            <t5>the percentage of living cells with<br>
+            <t5>the slider<br>
+Clear       <t5>clears the whole cell field<br>
+Start/Stop<br>
+            <t5>starts or stops Game of Life<br>
+<br>
+<b>Dead/alive rule settings</b><br>
+<br>
+The rule settings are placed at the bottom of the window.<br>
+<br>
+The checkboxes in the first line define, how many neighbours are necessary for a cell to stay alive. In the classic Game of Life 2 or 3 neighbours are required for a cell to stay alive. If there are less or more a cell will disappear. So only checkboxes 2 and 3 are active.<br>
+<br>
+The checkboxes in the second line define, how many neighbours are necessary for the birth of a new cell. The classic rules specify, that only when there are 3 neighbours a new cell will appear.<br>
+<br>
+By checking/unchecking the checkboxes you can alter the rules. This can end up in very stupid but also very interesting results.<br>
+<br>
+The "copy world" is a famous variation, just check all odd-numbered checkboxes (1,3,5,7) in both lines. See also the predefined <u 2200>copy world</u> in the <u 2200>PRESETS</u> menu.<br>
+<br>
+By checking 1,2,3,4 for the first and 2 for the second your cells will usually end up in a static labyrinth-like structure.<br>
+<br>
+
+<h2>2200-Pull Down Menus</h2>
+
+<br>
+<b>FILE MENU</b><br>
+<br>
+Here you can load an existing cell field or saves the current one to a file.<br>
+<br>
+<br>
+<b>PRESETS MENU</b><br>
+<br>
+Here you can load complete predefined worlds. Most are examples for different kind of patterns for the classic Game Of Life.<br>
+<br>
+<b>Oscillators</b> are patterns, which may change the shape a lot but after some generations they will return to their starting shape.<br>
+<br>
+<b>Glider guns</b> are producing so called "gliders" which are small moving patterns.<br>
+<br>
+<b>Spaceships</b> are very large patterns, which are still stable like Oscillators but moving as well either diagonal or vertical/horizontal.<br>
+<br>
+<b>1357 copy world</b> is an example for an alternative rule set.<br>
+<br>
