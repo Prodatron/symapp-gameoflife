@@ -2,14 +2,97 @@
 ;@                                                                            @
 ;@                 C o n w a y ' s   G a m e   o f   L i f e                  @
 ;@                                                                            @
-;@             (c) 2012-2014 by Prodatron / SymbiosiS (Jörn Mika)             @
+;@             (c) 2012-2025 by Prodatron / SymbiosiS (Jörn Mika)             @
 ;@                                                                            @
 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 relocate_start
 
+;Bugs
+;- still crashes sometime, e.g. with special rules sometimes
+
 ;Todo
+;- use system libraries
 ;- 16col optimization
+
+
+;### PRGPRZ -> Programm-Prozess
+;### PRGEND -> End Program
+;### PRGINF -> open info window
+;### PRGCFG -> Generates datafile path
+
+;--- CONTROL-ROUTINES ---------------------------------------------------------
+;### CTLSHW -> Shows field and counters
+;### CTLRUN -> Runs/stops cell generation
+;### CTLEDT -> Edits cell field
+;### CTLFIG -> Adds figure to cell field
+;### CTLFGC -> Figure has been choosed
+;### CTLRND -> Generates random cell field
+;### CTLRNV -> Sets random value
+;### CTLCLR -> Clears cellfield and resets generation counter
+
+;--- FILE-ROUTINES ------------------------------------------------------------
+;### FILFIG -> Gets figure (from disc or buffer)
+;### FILLOD -> Loads cell field
+;### FILSAV -> Saves cell field
+;### FILPRE -> Loads preset
+
+;--- SUB-ROUTINES -------------------------------------------------------------
+;### MSGGET -> Receives Message
+;### MSGDSK -> Receives Message from Desktop-Process
+;### MSGSND -> Sends Message to Desktop-Process
+;### CLCDEZ -> Converts Byte into two Decimaldigits
+;### CLCNUM -> Converts 16bit Number into sting (0-terminated)
+;### CLCM16 -> Multipliziert zwei Werte (16bit)
+;### CLCMUL -> Multipliziert zwei Werte (24bit)
+;### CLCDIV -> Dividiert zwei Werte (24bit)
+;### FLO_RANDOMIZE0 -> RND seek to 0
+;### FLO_RANDOMIZE -> RND seek to (HL)
+;### FLO_RND -> Gets next RND value
+;### FLO_LAST_RND -> Gets current RND value
+;### FLO_SGN -> Tests the sign of (HL)
+;### FLO_VZW -> Changes the sign of (HL)
+
+;--- CELL-ROUTINES ------------------------------------------------------------
+;### CELPRZ -> Cell calculation process
+;### CELMIR -> Mirrors cell-field borders for torus-mode
+;### CELCNT -> Checks cell situation
+;### CELCLC -> Calculates new cell field
+;### CELSHW -> Builds cell field
+
+;### CELGEN -> calculates next cell generation
+;### CELPLT -> plots cell field
+;### CELTRS -> mirrows cells at the border, if "torus" is activated
+;### CELTRC -> clears cells at the border, if "torus" is activated
+;### CELREC -> recalculate neighbours and alive count (torus ignored)
+
+;---
+
+macro cell_dead
+        dec (ix-65)     ;6
+        dec (ix-64)     ;6
+        dec (ix-63)     ;6
+        dec (ix-1)      ;6
+        dec (ix+1)      ;6
+        dec (ix+63)     ;6
+        dec (ix+64)     ;6
+        dec (ix+65)     ;6
+        res 4,(ix+0)    ;7
+        dec bc          ;2
+mend
+
+macro cell_alive
+        inc (ix-65)
+        inc (ix-64)
+        inc (ix-63)
+        inc (ix-1)
+        inc (ix+1)
+        inc (ix+63)
+        inc (ix+64)
+        inc (ix+65)
+        set 4,(ix+0)
+        inc bc
+mend
 
 
 ;==============================================================================
@@ -68,9 +151,9 @@ prgbnknum   db 0                    ;*reserved*                         POST ban
             dw prgicn16c-prgcodbeg  ;16 colour icon offset
             ds 5                    ;*reserved*
 prgmemtab   db "SymExe10"           ;SymbOS-EXE-Kennung                 POST Tabelle Speicherbereiche
-            dw celxln*celyln/8*3+2  ;zusätzlicher Code-Speicher
-            dw celxln*celyln        ;zusätzlicher Data-Speicher
-            dw 0                    ;zusätzlicher Transfer-Speicher
+            dw celxln*celyln*2+512+2    ;zusätzlicher Code-Speicher
+            dw celxln*celyln            ;zusätzlicher Data-Speicher
+            dw 0                        ;zusätzlicher Transfer-Speicher
             ds 26                   ;*reserviert*
             db 0,2                  ;required OS version (2.0)
 prgicnsml   db 2,8,8,#F0,#F0,#82,#78,#87,#78,#92,#92,#96,#96,#92,#F0,#96,#F0,#F0,#F0
@@ -92,6 +175,10 @@ prgprz  ld a,(prgprzn)
         ld (prgwindat+windatprz),a
         call SySystem_HLPINI
 
+        ld hl,celgen_wasdead
+        ld a,h
+        ld (celgen0+1),a
+
         ld hl,celstk
         ld a,(prgbnknum)
         ld e,6                  ;low priority
@@ -101,11 +188,13 @@ prgprz  ld a,(prgprzn)
         ld (prgcodbeg+prgpstspz+0),a
 
         ld hl,celfld
-        ld bc,celxln*celyln/8
+        ld bc,celxln*celyln
         add hl,bc
         ld (celawr),hl
         add hl,bc
         ld (celabf),hl
+
+        call celrul0
         call ctlclr0
         call ctlshw0
         call ctlrnv0
@@ -181,23 +270,27 @@ prginf0 ld (prgmsgb+1),hl
 
 ;### PRGCFG -> Generates datafile path
 cfgnam  db "gamelife.dat",0:cfgnam0
-cfgpth  dw 0
+cfgpth  ds 128
 
 prgcfg  ld hl,(prgcodbeg)
         ld de,prgcodbeg
         dec h
         add hl,de           ;HL = CodeEnd = path
-        ld (cfgpth),hl
+        ld de,cfgpth
+        push de
+        ld bc,128
+        ldir
+        pop hl
         ld e,l
         ld d,h              ;DE=HL
-        ld b,255
+        ld b,127
 prgcfg1 ld a,(hl)           ;search end of path
         or a
         jr z,prgcfg2
         inc hl
         djnz prgcfg1
         jr prgcfg4
-        ld a,255
+        ld a,127
         sub b
         jr z,prgcfg4
         ld b,a
@@ -232,7 +325,7 @@ ctlshw  call ctlshw0
         call msgsnd0
         ld de,7*256+256-3
         jp msgsnd0
-ctlshw0 call celshw             ;updates controls
+ctlshw0 call celplt             ;updates controls
         ld hl,(celclv)
         push hl
         ex de,hl
@@ -302,49 +395,10 @@ ctlrun1 ld (prgwinobj1),hl
         ld e,19
         jp msgsnd0
 
-;### CTLEDT -> Edits cell field
-ctledt  or a
-        jp nz,prgprz0       ;react only on left mouse clicks
-        call ctledt4        ;e,d=x,y
-        jp nc,prgprz0
-        ld a,(ctlsetflg)
-        or a
-        jr nz,ctlfig
-        call ctledt0
-        call ctledt5
-        xor (hl)
-        ld (hl),a
-        call ctledt1
-        call ctlshw
-        jp prgprz0
-;e,d=pos -> a=bit, hl=adr
-ctledt5 ld a,e
-        and 7
-        neg
-        add 7
-        add a:add a:add a
-        add #c7
-        ld (ctledt3+1),a
-        xor a
-ctledt3 set 0,a
-        ld (ctledt2+1),a
-        ld a,e
-        rrca:rrca:rrca
-        and 7
-        ld e,a
-        ld a,d
-        ld d,0
-        add a:add a
-        ld l,a
-        ld h,0
-        add hl,hl           ;hl=ypos*8
-        add hl,de
-        ld de,(celard)
-        add hl,de           ;hl=adr
-ctledt2 ld a,0              ;a=bit
-        ret
-;-> e,d=pos, cf=1 ok
-ctledt4 ld a,(iy+4)
+;### CTLPOS -> get cell position
+;### Input      IY=message  buffer
+;### Output     CF=1 ok, E,D=X,Ypos
+ctlpos  ld a,(iy+4)
         sub 4:srl a:cp 62
         ret nc
         inc a
@@ -355,12 +409,29 @@ ctledt4 ld a,(iy+4)
         inc a
         ld d,a              ;d=ypos (1-62)
         ret
-ctledt0 ld a,(ctlmod)       ;cell calculator -> pause
+
+;### CTLADR -> get cell address
+;### Input      E,D=X,Ypos
+;### Output     HL=address
+ctladr  ld c,e
+        ld a,d
+        ld de,celxln
+        ld b,d
+        call clcm16
+        add hl,bc
+        ld bc,(celard)
+        add hl,bc
+        ret
+
+;### CTLPAU -> pauses cell calculation for edit action
+ctlpau  ld a,(ctlmod)
         ld (ctlmod0),a
         xor a
         ld (ctlmod),a
         ret
-ctledt1 ld a,(ctlmod0)      ;cell calculator -> continue if active before
+
+;### CTLCON -> continues cell calculation, if active before
+ctlcon  ld a,(ctlmod0)
         or a
         ret z
         ld (ctlmod),a
@@ -368,18 +439,46 @@ ctledt1 ld a,(ctlmod0)      ;cell calculator -> continue if active before
         ld a,(celprzn)
         jp msgsnd1
 
+;### CTLEDT -> Edits cell field
+ctledt  or a
+        jp nz,prgprz0       ;react only on left mouse clicks
+        call ctlpos         ;e,d=x,y
+        jp nc,prgprz0
+        ld a,(ctlsetflg)
+        or a
+        jr nz,ctlfig
+        call ctlpau
+        call ctladr
+        push hl:pop ix
+        ld bc,(celclv)
+        bit 4,(ix+0)
+        jr nz,ctledt1
+        cell_alive
+        jr ctledt2
+ctledt1 cell_dead
+ctledt2 ld (celclv),bc
+ctledt3 call ctlcon
+        call ctlshw
+        jp prgprz0
+
 ;### CTLFIG -> Adds figure to cell field
 ctlfig  push de
         ld de,(ctlfigobj+12)
         call filfig
         pop de              ;e=xpos, d=ypos
         jp c,prgprz0
-        call ctledt0
+
+ctlfig0 call ctlpau
         ld c,(hl)           ;c=xlen
         inc hl
         ld b,(hl)           ;b=ylen
         inc hl              ;hl=bitmapdata
-        db #dd:ld h,e       ;ixh=xpos
+        call ctlfiga
+        call celrec
+        jr ctledt3
+
+;c=xlen,b=ylen,hl=bitmap,e=xpos,d=ypos
+ctlfiga db #dd:ld h,e       ;ixh=xpos
 ctlfig1 push bc             ;** line loop
         push hl
         db #dd:ld l,c
@@ -393,11 +492,12 @@ ctlfig2 dec b               ;** column loop
 ctlfig3 push hl
         push de
         push bc
-        call ctledt5
+        call ctladr
+        ld a,16
         pop bc
         rl c
         jr c,ctlfig4
-        xor #ff
+        cpl
         and (hl)
         jr ctlfig5
 ctlfig4 or (hl)
@@ -407,7 +507,7 @@ ctlfig5 ld (hl),a
         pop hl
         inc e
         ld a,e              ;don't cross right border
-        cp 63
+ctlfigx cp 63
         jr z,ctlfig6
         db #dd:dec l
         jr nz,ctlfig2
@@ -415,7 +515,7 @@ ctlfig6 inc d
         pop hl
         pop bc
         ld a,d              ;don't cross lower border
-        cp 63
+ctlfigy cp 63
         jr z,ctlfig7
         ld a,c
         add 7
@@ -427,9 +527,7 @@ ctlfig6 inc d
         sub l
         ld h,a              ;hl=next line
         djnz ctlfig1
-ctlfig7 call ctledt1
-        call ctlshw
-        jp prgprz0
+ctlfig7 ret
 
 ;### CTLFGC -> Figure has been choosed
 ctlfgc  ld a,1
@@ -437,6 +535,24 @@ ctlfgc  ld a,1
         ld de,256*12+256-2
         call msgsnd0
         jp prgprz0
+
+;### CTLRNV -> Sets random value
+ctlrnv  call ctlrnv0
+        ld e,16
+        call msgsnd0
+        jp prgprz0
+ctlrnv0 ld a,(ctlobjdat1+2)
+        ld hl,txtrndval
+        cp 100
+        jr c,ctlrnv1
+        sub 100
+        ld (hl),"1"
+        inc hl
+ctlrnv1 ex de,hl:call clcdez:ex de,hl
+        ld (hl),e:inc hl
+        ld (hl),d:inc hl
+        ld (hl),"%":inc hl:ld (hl),0
+        ret
 
 ;### CTLRND -> Generates random cell field
 ctlrnd  call ctlrun0
@@ -458,76 +574,51 @@ ctlrnd  call ctlrun0
         ldir
         pop hl
         call FLO_RANDOMIZE
-        ld hl,(celard)
-        ld bc,8
-        add hl,bc
-        ld bc,62*8
-ctlrnd1 push bc
-        push hl
-        ld bc,2*256
-ctlrnd2 push bc
+        ld iy,(celard)
+        ld bc,celxln+1
+        add iy,bc
+        ld c,31
+ctlrnd1 ld b,31             ;double row loop
+ctlrnd2 push bc             ;double column loop
         ld hl,rndval
         call FLO_RND
+ctlrnd3 ld bc,256*2
+ctlrnd4 inc hl              ;2x2 cell loop
+        rld:and 15:cp c
+        jr c,ctlrnd5
+        res 4,(iy+0)
+        jr ctlrnd6
+ctlrnd5 set 4,(iy+0)
+ctlrnd6 rld:and 15:cp c
+        jr c,ctlrnd7
+        res 4,(iy+64)
+        jr ctlrnd8
+ctlrnd7 set 4,(iy+64)
+ctlrnd8 inc iy
+        djnz ctlrnd4
         pop bc
-ctlrnd3 ld e,0
-        inc hl
-        rld:and 15:cp e:rl c
-        rld:and 15:cp e:rl c
-        inc hl
-        rld:and 15:cp e:rl c
-        rld:and 15:cp e:rl c
         djnz ctlrnd2
-        pop hl
-        ld (hl),c
-        pop bc
-        inc hl
-        dec bc
-        ld a,b
-        or c
+        ld de,2+64
+        add iy,de
+        dec c
         jr nz,ctlrnd1
-        ld ix,(celard)
-        call ctlrnd4
-        call ctlclr1
+        call celrec
+        call ctlclr1        ;reset gen counter
         call ctlshw
         jp prgprz0
-ctlrnd4 ld b,62
-        ld de,8
-ctlrnd5 add ix,de
-        res 0,(ix+7)
-        res 7,(ix+0)
-        djnz ctlrnd5
-        ret
-
-;### CTLRNV -> Sets random value
-ctlrnv  call ctlrnv0
-        ld e,16
-        call msgsnd0
-        jp prgprz0
-ctlrnv0 ld a,(ctlobjdat1+2)
-        ld hl,txtrndval
-        cp 100
-        jr c,ctlrnv1
-        sub 100
-        ld (hl),"1"
-        inc hl
-ctlrnv1 ex de,hl:call clcdez:ex de,hl
-        ld (hl),e:inc hl
-        ld (hl),d:inc hl
-        ld (hl),"%":inc hl:ld (hl),0
-        ret
 
 ;### CTLCLR -> Clears cellfield and resets generation counter
 ctlclr  call ctlrun0
         call ctlclr0
         call ctlshw
         jp prgprz0
-ctlclr0 ld hl,celfld
-        ld e,l
-        ld d,h
+ctlclr0 ld hl,(celard)
+        ld e,l:ld d,h
         inc de
-        ld bc,celxln*celyln/8*2-1
         ld (hl),0
+        ld bc,celxln*celyln-1
         ldir
+        ld (celclv),bc
 ctlclr1 ld hl,0
         ld (celcgn),hl
         ret
@@ -553,7 +644,7 @@ filfig  ld hl,(filfign)
         ret
 filfig1 push de
         ld ix,(prgbnknum-1)         ;ixh=bank number
-        ld hl,(cfgpth)
+        ld hl,cfgpth
         call SySystem_CallFunction  ;open file
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILOPN
@@ -632,20 +723,38 @@ fillod0 ld hl,celcfgbeg
         call SySystem_CallFunction  ;read field config
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILINP
+        push af
+        call celrul0
+        pop af
         pop de
         jr c,fillod1
-        or a
         jr nz,fillod1
         ld a,(filhnd)
-        ld hl,(celard)
+        ld hl,(celabf)
         ld bc,64*64/8
         call SySystem_CallFunction  ;read cells
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILINP
-fillod1 ld a,(filhnd)               ;close file
+        jr c,fillod1
+        ld bc,celxln*256+celyln
+        ld hl,(celabf)
+        ld de,0
+        ld a,64
+        ld (ctlfigx+1),a
+        ld (ctlfigy+1),a
+        call ctlfiga
+        ld a,63
+        ld (ctlfigx+1),a
+        ld (ctlfigy+1),a
+        call celrec
+        or a
+fillod1 push af
+        ld a,(filhnd)               ;close file
         call SySystem_CallFunction
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILCLO
+        pop af
+        ;...error message
         call ctlshw
         ld e,10
         call msgsnd0
@@ -678,8 +787,11 @@ filsav  ld c,64
         jr c,filsav1
         or a
         jr nz,filsav1
+        push de
+        call celbin                 ;convert current field to bin
+        pop de
         ld a,(filhnd)
-        ld hl,(celard)
+        ld hl,(celabf)
         ld bc,64*64/8
         call SySystem_CallFunction  ;write cells
         db MSC_SYS_SYSFIL
@@ -729,7 +841,7 @@ filpre  ld h,a
         call ctlrun0
         call ctlclr1
         ld ix,(prgbnknum-1)         ;ixh=bank number
-        ld hl,(cfgpth)
+        ld hl,cfgpth
         call SySystem_CallFunction  ;open file
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILOPN
@@ -1572,7 +1684,7 @@ celprz1 ld a,(ctlmod)
         jr z,celprz
 celprz2 ei
         ld bc,256*62+62
-        call celclc
+        call celgen
         di
         ld a,(ctlmod)
         or a
@@ -1581,6 +1693,7 @@ celprz2 ei
         dec (hl)
         ld (hl),0
         jr z,celprz2
+        ld (celclv),bc
         ld hl,(celawr)
         ld de,(celard)
         ld (celard),hl
@@ -1612,225 +1725,357 @@ celprz3 ld c,MSC_DSK_WINDIN
         rst #10
         ret
 
-;### CELMIR -> Mirrors cell-field borders for torus-mode
-;### Destroyed  AF,DE,HL,IXL
-celmir  push bc
-        ld hl,(celard)
-        push hl
-        ld bc,8
-        add hl,bc
-        push hl
-        ld e,l
-        ld d,h
-        add hl,bc
-        dec hl
-        db #dd:ld l,62
-celmir1 ld a,(de)
-        ld c,(hl)
-        res 0,(hl)
-        rlca:rlca
-        and 1
-        or (hl)
-        ld (hl),a
-        ex de,hl
-        ld a,c
-        rrca:rrca
-        and 128
-        res 7,(hl)
-        or (hl)
-        ld (hl),a
-        ld c,8
-        add hl,bc
-        ex de,hl
-        add hl,bc
-        db #dd:dec l
-        jr nz,celmir1
-        pop hl
-        ldir
-        ld hl,-16
-        add hl,de
-        pop de
-        ld c,8
-        ldir
-        pop bc
-        ret
-
-;### CELCNT -> Checks cell situation
-;### Input      IXL=internal bitcounter, (celcnt3+1)=line address
-;### Output     A=number of neighbour cells (0-8), ZF=0 center cell is alive, (celcnt3+1),IXL=updated
-;### Destroyed  F,BC,DE,HL
-celcntt
-db 0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-db 1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7
-db 1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7
-db 2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
-
-celcnt  db #dd:dec l        ;2
-        jr z,celcnt3        ;2 (+1)
-celcnt1 ld de,0             ;3  e=line0, d=line1, c=line2
-celcnt2 ld c,0              ;2
-        jr celcnt4          ;3 12
-
-celcnt3 ld hl,0             ;3
-        inc hl              ;2
-        ld (celcnt3+1),hl   ;5
-        ld b,cellln         ;2
-        ld e,(hl)           ;2
-        ld a,l:add b:ld l,a ;3
-        adc h:sub l:ld h,a  ;3
-        ld d,(hl)           ;2
-        ld a,l:add b:ld l,a ;3
-        adc h:sub l:ld h,a  ;3
-        ld c,(hl)           ;2
-        db #dd:ld l,8       ;3 34/8=4.25
-
-celcnt4 xor a               ;1
-        rl e:rla            ;3
-        rl d:rla            ;3
-        rl c:rla            ;3
-        ld b,a              ;1
-        ld (celcnt1+1),de   ;6
-        ld a,c              ;1
-        ld (celcnt2+1),a    ;4 22
-
-celcnt5 ld hl,0             ;3  l=row0, h=row1, b=row2
-        ld a,h              ;1
-        ld h,b              ;1
-        ld b,l              ;1
-        ld l,a              ;1  l=row1, h=row2, b=row0
-        ld (celcnt5+1),hl   ;5
-        ld (celcnt6+1),a    ;4
-        rra:rra:rrca        ;3  bit67
-        or h                ;1  bit012
-        rlc b:rlc b:rlc b   ;6
-        or b                ;1  bit345
-        ld l,a              ;1
-        ld h,0              ;2
-        ld de,celcntt       ;3
-        add hl,de           ;3
-celcnt6 ld a,0              ;2
-        and 2               ;2
-        ld a,(hl)           ;2 42 -> 80
-        ret
-
-;### CELCLC -> Calculates new cell field
-;### Input      (celard)=address of old field, (celawr)=address of new field, C=number of X cells (1-62), B=number of Y cells (1-62)
-;### Output     (celard)=address of new field
-;### Destroyed  AF,BC,DE,HL,IX,IY
-celclc  ld a,(celtor)
-        or a
-        call nz,celmir
-        ld hl,(celawr)
-        ld de,(celard)
-        db #fd:ld h,b           ;iyh=y counter
-        ld a,c
-        ld (celclc0+2),a
-        ld bc,cellln
-        add hl,bc               ;de=source address, hl=real destination (next line)
-
-        dec de                  ;init celcnt
-        ld (celcnt3+1),de
-        db #dd:ld l,1
-
-celclc0 db #fd:ld l,0           ;iyl=x counter
-        db #dd:ld h,1           ;ixh=destination bit
-        push hl
-        call celcnt
-        call celcnt
-        pop hl
-celclc1 push hl
-        call celcnt
-        ld hl,celnew
-        jr z,celclc2
-        ld hl,celold
-celclc2 ld c,a
-        ld b,0
-        add hl,bc
-        ld a,(hl)
-        pop hl
-        rrca:rrca
-        add #86                 ;res(0)/set(1)
-        ld e,a
-        ld a,7
-        db #dd:sub h
-        add a:add a:add a
-        or e
-        ld (celclc3+1),a
-celclc3 set 0,(hl)
-        db #dd:inc h
-        db #dd:ld a,h
-        cp 8
-        jr c,celclc4
-        inc hl
-        db #dd:ld h,0
-celclc4 db #fd:dec l
-        jr nz,celclc1
-        inc hl
-        db #fd:dec h
-        jr nz,celclc0
-        ld ix,(celawr)          ;clear border
-        call ctlrnd4
-        ld hl,(celawr)
-        call celclc5
-        ld bc,62*8+1
-        add hl,bc
-celclc5 ld e,l
-        ld d,h
-        inc de
-        ld bc,7
-        ld (hl),b
-        ldir
-        ret
-
-;### CELSHW -> Builds cell field
-;### Destroyed  AF,BC,DE,HL,IXL
-celshwa db #00,#05, #30,#35, #c0,#c5, #f0,#f5   ;cpc encoded
-celshwb db #00,#22, #05,#27, #50,#72, #55,#77   ;msx encoded
-
-celshw  ld hl,0
-        ld (celclv),hl
-        ld hl,celgfx
-        bit 7,(hl)
-        ld hl,celshwa
-        jr z,celshw0
-        ld hl,celshwb
-celshw0 ld (celshw4+1),hl
-        ld de,(celard)      ;de=source
-        ld ix,celgfx1       ;ix=destination
-        ld b,64
-celshw1 push bc
-        db #fd:ld h,cellln
-celshw2 ld a,(de)
-        inc de
-        ld c,a
-        ld b,0
-        ld hl,celcntt
-        add hl,bc
-        ld c,(hl)
-        ld hl,(celclv)
-        add hl,bc
-        ld (celclv),hl
-        db #fd:ld l,4
-celshw3 ld c,b
-        rla:rl c
-        rla:rl c
-        sla c
-celshw4 ld hl,0
-        add hl,bc
-        ld c,(hl)
-        ld (ix+0),c
-        inc hl
-        ld c,(hl)
-        ld (ix+32),c
+;### CELRUL -> generates code from cell rules
+;### Input      (celold+0-8),(celnew+0-8)=rules
+;### Output     celgen_wasdead,celgen_wasalive modified
+celrul  call celrul0
+        jp prgprz0
+celrul0 ld ix,celold
+        ld hl,celgen_wasalive+1
+        ld de,celgen_nowdead-celgen_wasalive-2*256+celgen_keep-celgen_wasalive-2
+        call celrul1
         inc ix
-        db #fd:dec l
-        jr nz,celshw3
-        db #fd:dec h
-        jr nz,celshw2
-        ld bc,32
-        add ix,bc
+        ld hl,celgen_wasdead+1
+        ld de,celgen_keep-celgen_wasdead-2*256+celgen_nowalive-celgen_wasdead-2
+celrul1 ld b,9
+celrul2 bit 0,(ix+0)
+        ld (hl),d
+        jr z,celrul3
+        ld (hl),e
+celrul3 inc ix
+        inc hl:inc hl
+        dec e:dec e
+        dec d:dec d
+        djnz celrul2
+        ret
+
+;### CELGEN -> calculates next cell generation
+;### Input      (celard)=old cell field [000SNNNN], celxln,celyln=size with border, (celclv)=old number of alive cells, celgen_wasdead/celgen_wasalive=rules as jumptable
+;### Output     (celawr)=new cell field, HL=new number of alive cells
+ds -$ mod 256
+celgen_wasdead
+        jr celgen_keep          ;3
+        jr celgen_keep
+        jr celgen_keep
+        jr celgen_nowalive
+        jr celgen_keep
+        jr celgen_keep
+        jr celgen_keep
+        jr celgen_keep
+        jr celgen_keep
+        ds 7*2              ;N/A
+celgen_wasalive
+        jr celgen_nowdead
+        jr celgen_nowdead
+        jr celgen_keep
+        jr celgen_keep
+        jr celgen_nowdead
+        jr celgen_nowdead
+        jr celgen_nowdead
+        jr celgen_nowdead
+        jr celgen_nowdead
+celgen_nowdead
+        cell_dead
+        jr celgen_keep  ;1,5 58,5
+celgen_nowalive
+        cell_alive
+celgen_keep
+        inc de          ;2
+        inc ix          ;3
+        dec iyh         ;2
+        jr nz,celgen2   ;3 18 -> 69192=3,46fr / 294066=14,7fr; 9fr for 50% changes
+        inc de:inc de
+        inc ix:inc ix
+        dec iyl
+        jr nz,celgen1
+        push bc
+        ld a,(celtor)
+        or a
+        call nz,celtrc          ;torus -> clear border
         pop bc
-        djnz celshw1
+        ret
+
+celgen  ld a,(celtor)
+        or a
+        call nz,celtrs          ;torus -> mirror border
+        ld hl,(celard)
+        ld de,(celawr)
+        push hl
+        push de
+        ld bc,celxln*celyln
+        ldir
+        pop ix
+        pop hl
+        ld bc,celxln+1
+        add hl,bc
+        ex de,hl
+        add ix,bc
+        ld bc,(celclv)
+celgen0 ld h,0                  ;celgen_wasdead/256
+        ld iyl,celyln-2
+celgen1 ld iyh,celxln-2
+celgen2 ld a,(de)               ;2
+        add a                   ;1
+        ld l,a                  ;1
+        jp (hl)                 ;1
+
+;### CELPLT -> plots cell field
+;### Input      (celard)=field, (celgfx)=bitmap, celxln,celyln=size with border
+celplta db #00,#05, #30,#35, #c0,#c5, #f0,#f5   ;cpc encoded
+celpltb db #00,#22, #05,#27, #50,#72, #55,#77   ;msx encoded
+
+celplt  ld a,(celgfx)
+        rla
+        ld bc,celplta
+        jr nc,celplt1
+        ld bc,celpltb
+celplt1 ld ix,celgfx1
+        ld de,celxln
+        ;add ix,de
+        ld hl,(celard)
+        ld e,celxln
+        ;add hl,de
+        ex de,hl
+        ld iyl,celyln;-2
+celplt2 ld iyh,celxln/2
+celplt3 ld a,(de):inc de        ;4
+        and 16                  ;2
+        ld l,a                  ;1
+        ld a,(de):inc de        ;4
+        and 16                  ;2
+        rrca                    ;1
+        or l                    ;1
+        rrca:rrca               ;2
+        ld l,a                  ;1
+        ld h,0                  ;2
+        add hl,bc               ;3
+        ld a,(hl):ld (ix+0),a   ;7
+        inc hl                  ;2
+        ld a,(hl):ld (ix+32),a  ;7
+        inc ix                  ;3
+        dec iyh                 ;2
+        jr nz,celplt3           ;3 47 -> 93248=4,6fr
+        ex de,hl
+        ld de,celxln/2
+        add ix,de
+        ex de,hl
+        dec iyl
+        jr nz,celplt2
+        ret
+
+;### CELTRS -> mirrows cells at the border, if "torus" is activated
+;### Input      (celard)=field
+;### Output     (celard)=updated field
+celtrs  ld ix,(celard)      ;** vertical
+        ld de,celxln+32
+        add ix,de           ;ix=middle of line (+32)
+        ld e,celxln
+        ld b,celyln-2
+celtrs1 bit 4,(ix-32+1)     ;cell on left?
+        jr z,celtrs2
+        set 4,(ix+32-1)     ;add new cell right
+        inc (ix+32-66)
+        inc (ix+32-02)
+        inc (ix+32+62)
+celtrs2 bit 4,(ix+32-2)     ;cell on right?
+        jr z,celtrs3
+        set 4,(ix-32+0)     ;add new cell left
+        inc (ix-32-63)
+        inc (ix-32+01)
+        inc (ix-32+65)
+celtrs3 add ix,de
+        djnz celtrs1
+
+        ld ix,(celard)      ;** horizontal
+        ld iy,(celard)
+        ld de,celxln*celyln-celxln
+        add iy,de           ;ix=top border, iy=bottom border
+        push iy
+        ld b,celxln-2
+celtrs4 bit 4,(ix+65)       ;cell on top?
+        jr z,celtrs5
+        set 4,(iy+1)        ;add new bottom cell
+        inc (iy-64)
+        inc (iy-63)
+        inc (iy-62)
+celtrs5 bit 4,(iy-63)       ;cell on bottom?
+        jr z,celtrs6
+        set 4,(ix+1)        ;add new top cell
+        inc (ix+64)
+        inc (ix+65)
+        inc (ix+66)
+celtrs6 inc ix
+        inc iy
+        djnz celtrs4
+
+        ld ix,(celard)      ;** edges
+        pop iy
+        bit 4,(ix+64+1)     ;up-left
+        jr z,celtrs7
+        set 4,(iy+63)       ;   -> add down-right
+        inc (iy-1-1)
+celtrs7 bit 4,(ix+64+62)    ;up-right
+        jr z,celtrs8
+        set 4,(iy+0)        ;   -> add down-left
+        inc (iy-1-62)
+celtrs8 bit 4,(iy-1-1)      ;down-right
+        jr z,celtrs9
+        set 4,(ix+0)        ;   -> add up-left
+        inc (ix+64+1)
+celtrs9 bit 4,(iy-1-62)     ;down-left
+        ret z
+        set 4,(ix+63)       ;   -> add up-right
+        inc (ix+64+62)
+        ret
+
+;### CELTRC -> clears cells at the border, if "torus" is activated
+;### Input      (celawr)=field
+;### Output     (celawr)=updated field
+celtrc  ld ix,(celawr)      ;** vertical
+        ld de,celxln+32
+        add ix,de           ;ix=middle of line (+32)
+        ld e,celxln
+        ld b,celyln-2
+celtrc1 bit 4,(ix+32-1)     ;cell on right?
+        jr z,celtrc2
+        res 4,(ix+32-1)     ;remove
+        dec (ix+32-66)
+        dec (ix+32-02)
+        dec (ix+32+62)
+celtrc2 bit 4,(ix-32+0)     ;cell on left?
+        jr z,celtrc3
+        res 4,(ix-32+0)     ;remove
+        dec (ix-32-63)
+        dec (ix-32+01)
+        dec (ix-32+65)
+celtrc3 add ix,de
+        djnz celtrc1
+
+        ld ix,(celawr)      ;** horizontal
+        ld iy,(celawr)
+        ld de,celxln*celyln-celxln
+        add iy,de           ;ix=top border, iy=bottom border
+        push iy
+        ld b,celxln-2
+celtrc4 bit 4,(iy+1)        ;cell on bottom?
+        jr z,celtrc5
+        res 4,(iy+1)        ;remove
+        dec (iy-64)
+        dec (iy-63)
+        dec (iy-62)
+celtrc5 bit 4,(ix+1)        ;cell on top?
+        jr z,celtrc6
+        res 4,(ix+1)        ;remove
+        dec (ix+64)
+        dec (ix+65)
+        dec (ix+66)
+celtrc6 inc ix
+        inc iy
+        djnz celtrc4
+
+        ld ix,(celawr)      ;** edges
+        pop iy
+        bit 4,(iy+63)       ;down-right
+        jr z,celtrc7
+        res 4,(iy+63)       ;   -> remove
+        dec (iy-1-1)
+celtrc7 bit 4,(iy+0)        ;down-left
+        jr z,celtrc8
+        res 4,(iy+0)        ;   -> remove 
+        dec (iy-1-62)
+celtrc8 bit 4,(ix+0)        ;up-left
+        jr z,celtrc9
+        res 4,(ix+0)        ;   -> remove
+        dec (ix+64+1)
+celtrc9 bit 4,(ix+63)       ;up-right
+        ret z
+        res 4,(ix+63)       ;   -> remove
+        dec (ix+64+62)
+        ret
+
+;### CELBIN -> converts cell field into binary data
+;### Input      (celard)=field
+;### Output     (celabf)=binary
+celbin  ld hl,(celard)
+        ld ix,(celabf)
+        ld de,celxln*celyln/8
+celbin1 ld b,8
+celbin2 bit 4,(hl)
+        inc hl
+        scf
+        jr nz,celbin3
+        ccf
+celbin3 rla
+        djnz celbin2
+        ld (ix+0),a
+        inc ix
+        dec de
+        ld a,e:or d
+        jr nz,celbin1
+        ret
+
+;### CELREC -> recalculate neighbours and alive count (torus ignored)
+;### Input      (celard)=field
+;### Output     (celard)=updated field, (celclv)=number of alive cells
+celrec  ld h,16
+        ld ix,(celard)
+
+        ld a,(ix+65)                ;** edge up-left
+        and h:rrca:rrca:rrca:rrca
+        ld (ix+0),a
+        ld a,(ix+126)               ;** edge up-right
+        and h:rrca:rrca:rrca:rrca
+        ld (ix+63),a
+
+        ld de,celxln                ;** center lines
+        add ix,de
+        ld e,0
+        ld bc,celxln*celyln-celxln-celxln
+celrec1 ld a,(ix-65):and h:      ld l,a     ;7
+        ld a,(ix-64):and h:add l:ld l,a     ;8
+        ld a,(ix-63):and h:add l:ld l,a     ;8
+        ld a,(ix- 1):and h:add l:ld l,a     ;8
+        ld a,(ix+ 1):and h:add l:ld l,a     ;8
+        ld a,(ix+63):and h:add l:ld l,a     ;8
+        ld a,(ix+64):and h:add l:ld l,a     ;8
+        ld a,(ix+65):and h:add l            ;7
+        rrca:rrca:rrca:rrca     :ld l,a     ;5
+        ld a,(ix+0)                         ;5
+        and h                               ;1
+        jr z,celrec2                        ;3/2
+        inc de                              ;0/2
+celrec2 add l                               ;1
+        ld (ix+0),a                         ;5
+        inc ix                              ;3
+        dec bc
+        ld a,c:or b
+        jr nz,celrec1
+        ld (celclv),de
+
+        ld a,(ix-63)                ;** edge down-left
+        and h:rrca:rrca:rrca:rrca
+        ld (ix+0),a
+        ld a,(ix-2)                 ;** edge down-right
+        and h:rrca:rrca:rrca:rrca
+        ld (ix+63),a
+
+        ld a,-65                    ;** last and first line
+        call celrec3
+        ld ix,(celard)
+        ld a,63
+
+celrec3 inc ix
+        ld (celreca+2),a:inc a
+        ld (celrecb+2),a:inc a
+        ld (celrecc+2),a
+        ld b,celxln-2
+celreca ld a,(ix+63):and h:      ld l,a
+celrecb ld a,(ix+64):and h:add l:ld l,a
+celrecc ld a,(ix+65):and h:add l
+        rrca:rrca:rrca:rrca
+        ld (ix+0),a
+        inc ix
+        djnz celreca
         ret
 
 
@@ -2136,8 +2381,10 @@ txtctlfig217 db "Z-pentomino",0
 
 ;### About
 prgmsginf1 db "Conway's Game of Life",0
-prgmsginf2 db " Version 1.1 (Build 140602pdt)",0
-prgmsginf3 db " Copyright <c> 2014 SymbiosiS",0
+prgmsginf2 db " Version 1.2 (Build "
+read "..\..\..\SRC-Main\build.asm"
+            db "pdt)",0
+prgmsginf3 db " Copyright <c> 2025 SymbiosiS",0
 
 
 celgfx  db celxln/2, celxln*2, celyln*2
@@ -2233,25 +2480,25 @@ dw     00,255*256+1 ,ctlobjdri6,107,celyln*2+4,8,8, 0           ;29="6"
 dw     00,255*256+1 ,ctlobjdri7,116,celyln*2+4,8,8, 0           ;30="7"
 dw     00,255*256+1 ,ctlobjdri8,125,celyln*2+4,8,8, 0           ;31="8"
 
-dw     00,255*256+17,ctlobjdrk0,52,celyln*2+12,8,8,0            ;32=keep 0
-dw     00,255*256+17,ctlobjdrk1,61,celyln*2+12,8,8,0            ;33=keep 1
-dw     00,255*256+17,ctlobjdrk2,70,celyln*2+12,8,8,0            ;34=keep 2
-dw     00,255*256+17,ctlobjdrk3,79,celyln*2+12,8,8,0            ;35=keep 3
-dw     00,255*256+17,ctlobjdrk4,88,celyln*2+12,8,8,0            ;36=keep 4
-dw     00,255*256+17,ctlobjdrk5,97,celyln*2+12,8,8,0            ;37=keep 5
-dw     00,255*256+17,ctlobjdrk6,106,celyln*2+12,8,8,0           ;38=keep 6
-dw     00,255*256+17,ctlobjdrk7,115,celyln*2+12,8,8,0           ;39=keep 7
-dw     00,255*256+17,ctlobjdrk8,124,celyln*2+12,8,8,0           ;40=keep 8
+dw celrul,255*256+17,ctlobjdrk0,52,celyln*2+12,8,8,0            ;32=keep 0
+dw celrul,255*256+17,ctlobjdrk1,61,celyln*2+12,8,8,0            ;33=keep 1
+dw celrul,255*256+17,ctlobjdrk2,70,celyln*2+12,8,8,0            ;34=keep 2
+dw celrul,255*256+17,ctlobjdrk3,79,celyln*2+12,8,8,0            ;35=keep 3
+dw celrul,255*256+17,ctlobjdrk4,88,celyln*2+12,8,8,0            ;36=keep 4
+dw celrul,255*256+17,ctlobjdrk5,97,celyln*2+12,8,8,0            ;37=keep 5
+dw celrul,255*256+17,ctlobjdrk6,106,celyln*2+12,8,8,0           ;38=keep 6
+dw celrul,255*256+17,ctlobjdrk7,115,celyln*2+12,8,8,0           ;39=keep 7
+dw celrul,255*256+17,ctlobjdrk8,124,celyln*2+12,8,8,0           ;40=keep 8
 
-dw     00,255*256+17,ctlobjdrn0,52,celyln*2+20,8,8,0            ;41=new 0
-dw     00,255*256+17,ctlobjdrn1,61,celyln*2+20,8,8,0            ;42=new 1
-dw     00,255*256+17,ctlobjdrn2,70,celyln*2+20,8,8,0            ;43=new 2
-dw     00,255*256+17,ctlobjdrn3,79,celyln*2+20,8,8,0            ;44=new 3
-dw     00,255*256+17,ctlobjdrn4,88,celyln*2+20,8,8,0            ;45=new 4
-dw     00,255*256+17,ctlobjdrn5,97,celyln*2+20,8,8,0            ;46=new 5
-dw     00,255*256+17,ctlobjdrn6,106,celyln*2+20,8,8,0           ;47=new 6
-dw     00,255*256+17,ctlobjdrn7,115,celyln*2+20,8,8,0           ;48=new 7
-dw     00,255*256+17,ctlobjdrn8,124,celyln*2+20,8,8,0           ;49=new 8
+dw celrul,255*256+17,ctlobjdrn0,52,celyln*2+20,8,8,0            ;41=new 0
+dw celrul,255*256+17,ctlobjdrn1,61,celyln*2+20,8,8,0            ;42=new 1
+dw celrul,255*256+17,ctlobjdrn2,70,celyln*2+20,8,8,0            ;43=new 2
+dw celrul,255*256+17,ctlobjdrn3,79,celyln*2+20,8,8,0            ;44=new 3
+dw celrul,255*256+17,ctlobjdrn4,88,celyln*2+20,8,8,0            ;45=new 4
+dw celrul,255*256+17,ctlobjdrn5,97,celyln*2+20,8,8,0            ;46=new 5
+dw celrul,255*256+17,ctlobjdrn6,106,celyln*2+20,8,8,0           ;47=new 6
+dw celrul,255*256+17,ctlobjdrn7,115,celyln*2+20,8,8,0           ;48=new 7
+dw celrul,255*256+17,ctlobjdrn8,124,celyln*2+20,8,8,0           ;49=new 8
 
 ctlobjdat1 dw 1, 50, 100, 256*255+1
 ctlobjdat2 dw txtrndval:db 3+0+128,2
