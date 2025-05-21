@@ -24,11 +24,15 @@ relocate_start
 ;--- CONTROL-ROUTINES ---------------------------------------------------------
 ;### CTLSHW -> Shows field and counters
 ;### CTLRUN -> Runs/stops cell generation
+;### CTLPOS -> get cell position
+;### CTLADR -> get cell address
+;### CTLPAU -> pauses cell calculation for edit action
+;### CTLCON -> continues cell calculation, if active before
 ;### CTLEDT -> Edits cell field
 ;### CTLFIG -> Adds figure to cell field
 ;### CTLFGC -> Figure has been choosed
-;### CTLRND -> Generates random cell field
 ;### CTLRNV -> Sets random value
+;### CTLRND -> Generates random cell field
 ;### CTLCLR -> Clears cellfield and resets generation counter
 
 ;--- FILE-ROUTINES ------------------------------------------------------------
@@ -55,16 +59,13 @@ relocate_start
 
 ;--- CELL-ROUTINES ------------------------------------------------------------
 ;### CELPRZ -> Cell calculation process
-;### CELMIR -> Mirrors cell-field borders for torus-mode
-;### CELCNT -> Checks cell situation
-;### CELCLC -> Calculates new cell field
-;### CELSHW -> Builds cell field
-
+;### CELRUL -> generates code from cell rules
 ;### CELGEN -> calculates next cell generation
 ;### CELPLT -> plots cell field
 ;### CELTRS -> mirrows cells at the border, if "torus" is activated
 ;### CELTRC -> clears cells at the border, if "torus" is activated
-;### CELREC -> recalculate neighbours and alive count (torus ignored)
+;### CELBIN -> converts cell field into binary data
+;### CELREC -> recalculate neighbours and alive count
 
 ;---
 
@@ -2028,7 +2029,7 @@ celbin3 rla
         jr nz,celbin1
         ret
 
-;### CELREC -> recalculate neighbours and alive count (torus ignored)
+;### CELREC -> recalculate neighbours and alive count
 ;### Input      (celard)=field
 ;### Output     (celard)=updated field, (celclv)=number of alive cells
 celrec  ld h,16
