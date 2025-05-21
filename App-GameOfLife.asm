@@ -9,7 +9,7 @@
 relocate_start
 
 ;Bugs
-;- still crashes sometime, e.g. with special rules sometimes
+;- still crashes sometimes (plot figures during movement?)
 
 ;Todo
 ;- use system libraries
@@ -196,6 +196,7 @@ prgprz  ld a,(prgprzn)
 
         call celrul0
         call ctlclr0
+        call celplt0
         call ctlshw0
         call ctlrnv0
         call prgcfg
@@ -1688,10 +1689,12 @@ celprz2 ei
         di
         ld a,(ctlmod)
         or a
+        call z,celprz0      ;remove torus from source again, if stopped
         jr z,celprz
         ld hl,celprzr
         dec (hl)
         ld (hl),0
+        call z,celprz0      ;remove torus from source again, if discarded
         jr z,celprz2
         ld (celclv),bc
         ld hl,(celawr)
@@ -1723,6 +1726,11 @@ celprz3 ld c,MSC_DSK_WINDIN
         ld (iy+4),l
         ld (iy+5),h
         rst #10
+        ret
+celprz0 push af             ;remove torus from source
+        ld ix,(celard)
+        call celtrc0
+        pop af
         ret
 
 ;### CELRUL -> generates code from cell rules
@@ -1831,12 +1839,12 @@ celplt  ld a,(celgfx)
         ld bc,celpltb
 celplt1 ld ix,celgfx1
         ld de,celxln
-        ;add ix,de
+        add ix,de
         ld hl,(celard)
         ld e,celxln
-        ;add hl,de
+        add hl,de
         ex de,hl
-        ld iyl,celyln;-2
+        ld iyl,celyln-2
 celplt2 ld iyh,celxln/2
 celplt3 ld a,(de):inc de        ;4
         and 16                  ;2
@@ -1862,11 +1870,16 @@ celplt3 ld a,(de):inc de        ;4
         dec iyl
         jr nz,celplt2
         ret
+celplt0 ld bc,celplta       ;initial plot before first display
+        ld ix,celgfx1
+        ld de,(celard)
+        ld iyl,celyln
+        jr celplt2
 
 ;### CELTRS -> mirrows cells at the border, if "torus" is activated
 ;### Input      (celard)=field
 ;### Output     (celard)=updated field
-celtrs  ld ix,(celard)      ;** vertical
+celtrs  ld ix,(celard)          ;** vertical
         ld de,celxln+32
         add ix,de           ;ix=middle of line (+32)
         ld e,celxln
@@ -1885,8 +1898,7 @@ celtrs2 bit 4,(ix+32-2)     ;cell on right?
         inc (ix-32+65)
 celtrs3 add ix,de
         djnz celtrs1
-
-        ld ix,(celard)      ;** horizontal
+        ld ix,(celard)          ;** horizontal
         ld iy,(celard)
         ld de,celxln*celyln-celxln
         add iy,de           ;ix=top border, iy=bottom border
@@ -1907,8 +1919,7 @@ celtrs5 bit 4,(iy-63)       ;cell on bottom?
 celtrs6 inc ix
         inc iy
         djnz celtrs4
-
-        ld ix,(celard)      ;** edges
+        ld ix,(celard)          ;** edges
         pop iy
         bit 4,(ix+64+1)     ;up-left
         jr z,celtrs7
@@ -1931,7 +1942,9 @@ celtrs9 bit 4,(iy-1-62)     ;down-left
 ;### CELTRC -> clears cells at the border, if "torus" is activated
 ;### Input      (celawr)=field
 ;### Output     (celawr)=updated field
-celtrc  ld ix,(celawr)      ;** vertical
+celtrc  ld ix,(celawr)
+
+celtrc0 push ix                 ;** vertical
         ld de,celxln+32
         add ix,de           ;ix=middle of line (+32)
         ld e,celxln
@@ -1950,11 +1963,12 @@ celtrc2 bit 4,(ix-32+0)     ;cell on left?
         dec (ix-32+65)
 celtrc3 add ix,de
         djnz celtrc1
+        pop ix
 
-        ld ix,(celawr)      ;** horizontal
-        ld iy,(celawr)
+        push ix:pop iy          ;** horizontal
         ld de,celxln*celyln-celxln
         add iy,de           ;ix=top border, iy=bottom border
+        push ix
         push iy
         ld b,celxln-2
 celtrc4 bit 4,(iy+1)        ;cell on bottom?
@@ -1972,11 +1986,11 @@ celtrc5 bit 4,(ix+1)        ;cell on top?
 celtrc6 inc ix
         inc iy
         djnz celtrc4
-
-        ld ix,(celawr)      ;** edges
         pop iy
-        bit 4,(iy+63)       ;down-right
-        jr z,celtrc7
+        pop ix
+
+        bit 4,(iy+63)           ;** edges
+        jr z,celtrc7        ;down-right
         res 4,(iy+63)       ;   -> remove
         dec (iy-1-1)
 celtrc7 bit 4,(iy+0)        ;down-left
@@ -2019,14 +2033,12 @@ celbin3 rla
 ;### Output     (celard)=updated field, (celclv)=number of alive cells
 celrec  ld h,16
         ld ix,(celard)
-
         ld a,(ix+65)                ;** edge up-left
         and h:rrca:rrca:rrca:rrca
         ld (ix+0),a
         ld a,(ix+126)               ;** edge up-right
         and h:rrca:rrca:rrca:rrca
         ld (ix+63),a
-
         ld de,celxln                ;** center lines
         add ix,de
         ld e,0
@@ -2051,19 +2063,16 @@ celrec2 add l                               ;1
         ld a,c:or b
         jr nz,celrec1
         ld (celclv),de
-
         ld a,(ix-63)                ;** edge down-left
         and h:rrca:rrca:rrca:rrca
         ld (ix+0),a
         ld a,(ix-2)                 ;** edge down-right
         and h:rrca:rrca:rrca:rrca
         ld (ix+63),a
-
         ld a,-65                    ;** last and first line
         call celrec3
         ld ix,(celard)
         ld a,63
-
 celrec3 inc ix
         ld (celreca+2),a:inc a
         ld (celrecb+2),a:inc a
